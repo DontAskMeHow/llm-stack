@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llm-gateway-config
+  namespace: llm
+  labels:
+    app.kubernetes.io/name: llm-stack
+data:
+  config.yaml: |
+    listen: {host: 0.0.0.0, port: 8090}
+    probe_interval_s: 30
+    retention_days: 90
+    db: /data/gateway.db
+    log: /data/usage.jsonl
+    upstreams:
+      next:
+        base_url: http://llm-a.internal:8040/llm/next/v1
+        model: Big-Next-Instruct
+        timeout_s: 180
+        retries: 1
+        fallback: [mid]
+        price: {input: 0.30, cached_input: 0.05, output: 1.20}
+        api_price: {input: 0.60, cached_input: 0.10, output: 2.40}
+      mid:
+        base_url: http://llm-b.internal:8040/llm/mid/v1
+        model: Mid-Instruct
+        timeout_s: 90
+        retries: 1
+        fallback: []
+        price: {input: 0.20, cached_input: 0.04, output: 0.80}
+        api_price: {input: 0.50, cached_input: 0.10, output: 2.00}
+    keys:
+      agent: {models: [next, mid], rpm: 30, tpm: 200000, daily_budget_usd: 5}
+      scripts: {models: [next, mid], rpm: 60, tpm: 400000, daily_budget_usd: 8}

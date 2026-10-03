@@ -1,0 +1,26 @@
+# Только для кластеров со встроенным helm-контроллером (k3s). В остальных случаях —
+# `helm upgrade --install monitoring kube-prometheus-stack -f -` с этим же блоком values
+# или свой Prometheus-оператор; см. README.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: llm-monitoring
+  namespace: kube-system
+spec:
+  chart: kube-prometheus-stack
+  repo: https://prometheus-community.github.io/helm-charts
+  targetNamespace: kube-system
+  valuesContent: |-
+    grafana:
+      adminPassword: change-me
+      service:
+        type: NodePort
+        nodePort: 30080
+    prometheus:
+      prometheusSpec:
+        retention: 90d
+        resources:
+          requests: {memory: 512Mi, cpu: 200m}
+          limits: {memory: 1Gi}
+    alertmanager:
+      enabled: true

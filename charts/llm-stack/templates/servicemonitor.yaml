@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: llm-gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+    release: {{ include "llm-stack.releaseLabel" . }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.namespace }}
+  selector:
+    matchLabels:
+      scrape-target: {{ .Values.metrics.scrapeTarget }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.metrics.interval }}

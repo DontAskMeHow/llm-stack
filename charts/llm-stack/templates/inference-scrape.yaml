@@ -1,0 +1,84 @@
+{{- if .Values.inferenceScrape.enabled }}
+{{- $scrape := .Values.inferenceScrape }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-inference
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+    scrape-target: llm-inference
+spec:
+  # Без selector: метрики приходят реверс-форвардом на адрес узла, а не из пода,
+  # поэтому адреса перечислены в Endpoints ниже. EndpointSlice для такого сервиса
+  # делает сам endpoint-контроллер из Endpoints; вручную заведённый срез он со временем
+  # чистит, поэтому здесь именно Endpoints.
+  ports:
+    - name: inference
+      port: {{ $scrape.port }}
+      targetPort: {{ $scrape.port }}
+    {{- range $scrape.members }}
+    - name: node-{{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .port }}
+    - name: dcgm-{{ .name }}
+      port: {{ .metricsPort }}
+      targetPort: {{ .metricsPort }}
+    {{- end }}
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: llm-inference
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+subsets:
+  - addresses:
+      - ip: {{ $scrape.host | quote }}
+    ports:
+      - name: inference
+        port: {{ $scrape.port }}
+      {{- range $scrape.members }}
+      - name: node-{{ .name }}
+        port: {{ .port }}
+      - name: dcgm-{{ .name }}
+        port: {{ .metricsPort }}
+      {{- end }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: llm-inference
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+    release: {{ include "llm-stack.releaseLabel" . }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Values.namespace }}
+  selector:
+    matchLabels:
+      scrape-target: llm-inference
+  endpoints:
+    # Метрики инференса отдаёт тот же маршрут, что и API: путь = префикс + /metrics.
+    - port: inference
+      path: {{ printf "%s/metrics" $scrape.pathPrefix }}
+      interval: {{ .Values.metrics.interval }}
+      scrapeTimeout: {{ .Values.metrics.scrapeTimeout }}
+    {{- range $scrape.members }}
+    - port: node-{{ .name }}
+      interval: {{ $.Values.metrics.interval }}
+      scrapeTimeout: {{ $.Values.metrics.scrapeTimeout }}
+      relabelings:
+        - targetLabel: member
+          replacement: {{ .name }}
+    - port: dcgm-{{ .name }}
+      interval: {{ $.Values.metrics.interval }}
+      scrapeTimeout: {{ $.Values.metrics.scrapeTimeout }}
+      relabelings:
+        - targetLabel: member
+          replacement: {{ .name }}
+    {{- end }}
+{{- end }}

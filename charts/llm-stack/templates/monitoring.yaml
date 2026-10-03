@@ -1,0 +1,34 @@
+{{- if .Values.monitoring.enabled }}
+# Нативный для k3s способ: helm-контроллер кластера сам ставит чарт по этому CR,
+# локальный helm не нужен. Для другого кластера — тот же набор через
+# `helm upgrade --install` (см. README).
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: llm-monitoring
+  namespace: kube-system
+spec:
+  chart: kube-prometheus-stack
+  repo: https://prometheus-community.github.io/helm-charts
+  {{- if .Values.monitoring.chartVersion }}
+  version: {{ .Values.monitoring.chartVersion | quote }}
+  {{- end }}
+  targetNamespace: kube-system
+  valuesContent: |-
+    grafana:
+      adminPassword: {{ .Values.monitoring.grafanaAdminPassword | quote }}
+      service:
+        type: NodePort
+        nodePort: {{ .Values.monitoring.grafanaNodePort }}
+    prometheus:
+      prometheusSpec:
+        retention: {{ .Values.monitoring.retention }}
+        resources:
+          requests:
+            memory: {{ .Values.monitoring.prometheus.requests.memory }}
+            cpu: {{ .Values.monitoring.prometheus.requests.cpu }}
+          limits:
+            memory: {{ .Values.monitoring.prometheus.limits.memory }}
+    alertmanager:
+      enabled: true
+{{- end }}

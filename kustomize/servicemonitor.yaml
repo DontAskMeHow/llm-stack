@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: llm-gateway
+  namespace: llm
+  labels:
+    app.kubernetes.io/name: llm-stack
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames: [llm]
+  selector:
+    # Узкий selector: широкий по release подбирает чужие службы чарта.
+    matchLabels:
+      scrape-target: llm-gateway
+  endpoints:
+    - {port: http, path: /metrics, interval: 30s}

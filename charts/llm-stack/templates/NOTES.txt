@@ -1,0 +1,14 @@
+Шлюз и наблюдаемость применены.
+
+Применённое состояние:
+  namespace  {{ .Values.namespace }}
+  образ      {{ include "llm-stack.image" . }}
+  мониторинг {{ if .Values.monitoring.enabled }}kube-prometheus-stack через HelmChart CR{{ else }}выключен{{ end }}
+
+Проверить:
+  kubectl -n {{ .Values.namespace }} rollout status deploy/llm-gateway
+  kubectl -n {{ .Values.namespace }} get servicemonitor
+  curl -s http://<узел>:{{ .Values.monitoring.grafanaNodePort }}/api/health
+
+Если наблюдение выключено или Prometheus не видит цели — сначала проверяется
+туннель до инференс-хоста (он поднимается на машине, не в кластере), потом манифесты.

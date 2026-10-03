@@ -1,0 +1,84 @@
+# Пример оверлея под другую площадку: два инференс-хоста, внешний провайдер,
+# своё имя namespace. Накладывается поверх values.yaml:
+#   helm upgrade --install llm charts/llm-stack -f charts/llm-stack/values.yaml \
+#       -f charts/llm-stack/values-office.yaml
+# Реальные адреса и пароли — в values.local.yaml (не коммитится).
+
+namespace: llm-prod
+
+image:
+  repository: registry.internal/home-ai-gateway
+  tag: "1.1"
+
+replicas: 2
+
+config:
+  upstreams:
+    big:
+      base_url: http://llm-a.internal:8040/llm/big/v1
+      model: Big-Next-Instruct
+      timeout_s: 240
+      retries: 2
+      fallback: [small, external]
+      price: {input: 0.35, cached_input: 0.06, output: 1.40}
+      api_price: {input: 0.80, cached_input: 0.15, output: 3.20}
+    small:
+      base_url: http://llm-b.internal:8040/llm/small/v1
+      model: Small-Instruct
+      timeout_s: 60
+      retries: 1
+      fallback: [external]
+      price: {input: 0.15, cached_input: 0.03, output: 0.60}
+      api_price: {input: 0.40, cached_input: 0.08, output: 1.60}
+    external:
+      base_url: https://api.external-provider.com/v1
+      model: gpt-mini
+      timeout_s: 60
+      retries: 2
+      fallback: [small]
+      api_key: ${EXTERNAL_API_KEY}
+      price: {input: 0.80, cached_input: 0.15, output: 3.20}
+      api_price: {input: 0.80, cached_input: 0.15, output: 3.20}
+  keys:
+    agent:
+      models: [big, small, external]
+      rpm: 40
+      tpm: 300000
+      daily_budget_usd: 8
+    batch:
+      models: [small]
+      rpm: 120
+      tpm: 900000
+      daily_budget_usd: 20
+
+metrics:
+  scrapeTarget: llm-gateway
+  interval: 30s
+  releaseLabel: monitoring
+
+inferenceScrape:
+  host: 10.10.0.11
+  port: 8040
+  pathPrefix: /llm/big
+  members:
+    - name: head
+      port: 9101
+      metricsPort: 9401
+    - name: worker-a
+      port: 9103
+      metricsPort: 9403
+    - name: worker-b
+      port: 9104
+      metricsPort: 9404
+
+monitoring:
+  retention: 180d
+  grafanaNodePort: 30081
+  grafanaAdminPassword: change-me-too
+  prometheus:
+    requests: {memory: 1Gi, cpu: 300m}
+    limits: {memory: 2Gi}
+
+persistence:
+  size: 8Gi
+  storageClass: ""

@@ -1,0 +1,123 @@
+# Нейтральные значения по умолчанию. Реальные адреса и токены кладутся в
+# values.local.yaml (он в .gitignore) и накладываются через `-f values.local.yaml`.
+
+namespace: llm
+
+image:
+  repository: home-ai-gateway
+  tag: "1.0"
+  pullPolicy: IfNotPresent
+
+# Одна реплика: SQLite-файл на PVC используется одним процессом, RollingUpdate с
+# вторым подом только создаёт гонку за файл.
+replicas: 1
+
+resources:
+  requests: {cpu: 100m, memory: 128Mi}
+  limits: {cpu: 500m, memory: 256Mi}
+
+service:
+  port: 8090
+  # NodePort — чтобы потребители с машин видели шлюз напрямую; для кластера за
+  # ингрессом ставят ClusterIP и включают ingresses.
+  type: NodePort
+  nodePort: 30090
+
+ingresses:
+  enabled: false
+  className: traefik
+  host: llm.example.internal
+
+persistence:
+  size: 2Gi
+  # local-path входит в k3s; для другого кластера укажите свой StorageClass.
+  storageClass: local-path
+
+# Каталог апстримов и ключи. Сюда попадают только нечувствительные поля;
+# токены — в Secret (см. secret.token ниже).
+config:
+  listen:
+    host: 0.0.0.0
+    port: 8090
+  probe_interval_s: 30
+  retention_days: 90
+  db: /data/gateway.db
+  log: /data/usage.jsonl
+  upstreams:
+    next:
+      base_url: http://llm-a.internal:8040/llm/next/v1
+      model: Big-Next-Instruct
+      timeout_s: 180
+      retries: 1
+      fallback: [mid]
+      price: {input: 0.30, cached_input: 0.05, output: 1.20}
+      api_price: {input: 0.60, cached_input: 0.10, output: 2.40}
+    mid:
+      base_url: http://llm-b.internal:8040/llm/mid/v1
+      model: Mid-Instruct
+      timeout_s: 90
+      retries: 1
+      fallback: []
+      price: {input: 0.20, cached_input: 0.04, output: 0.80}
+      api_price: {input: 0.50, cached_input: 0.10, output: 2.00}
+  keys:
+    agent:
+      models: [next, mid]
+      rpm: 30
+      tpm: 200000
+      daily_budget_usd: 5
+    scripts:
+      models: [next, mid]
+      rpm: 60
+      tpm: 400000
+      daily_budget_usd: 8
+
+secret:
+  # Имя Secret с токенами потребителей. Реальные значения — в values.local.yaml,
+  # который не коммитится; здесь только схема.
+  name: llm-gateway-config-extra
+  # data: {agent: "sk-...", scripts: "sk-..."}
+  data: {}
+
+metrics:
+  # Отдельный ServiceMonitor на шлюз. Selector — по различающему лейблу: широкий
+  # selector по release подбирает чужие службы чарта, и их эндпоинты дают 404.
+  scrapeTarget: llm-gateway
+  interval: 30s
+  # Холодный рукопожатие по цепочке туннелей иногда превышает дефолтные 10 с, и
+  # первый скрейп после простоя уходит в timeout. Для инференс-целей таймаут поднимаем.
+  scrapeTimeout: 25s
+  # Лейбл, по которому observability-стек берёт наши ServiceMonitor'ы. Совпадает
+  # с именем helm-релиза этого стека; для kube-prometheus-stack, поставленного как
+  # релиз monitoring, пишут сюда monitoring.
+  releaseLabel: ""
+
+# Метрики самого инференс-хоста (vLLM) и нод. Ходит через тот же туннель, что и API:
+# на ноде хоста публикуется localhost-порт, сюда приходит host:port.
+inferenceScrape:
+  enabled: true
+  # Адрес узла, на котором поднимаются реверс-форварды: в Endpoints попадает он,
+  # поэтому здесь IP, а не имя.
+  host: 10.0.0.11
+  port: 8040
+  pathPrefix: /llm/next
+  members:
+    - name: llm-head
+      port: 9101
+      metricsPort: 9401
+    - name: llm-worker
+      port: 9102
+      metricsPort: 9402
+
+monitoring:
+  # Ставится HelmChart CR — нативным для k3s helm-контроллером, без локального helm.
+  enabled: true
+  chartVersion: ""
+  retention: 90d
+  grafanaNodePort: 30080
+  # Реальный пароль — в values.local.yaml; здесь только схема.
+  grafanaAdminPassword: change-me
+  dashboard: true
+  prometheus:
+    requests: {memory: 512Mi, cpu: 200m}
+    limits: {memory: 1Gi}
