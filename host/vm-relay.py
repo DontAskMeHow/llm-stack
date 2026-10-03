@@ -1,9 +1,10 @@
 """Релей от ноутбука к ВМ Hostkey: API/метрики Mercury + метрики нод GB10.
 
-Пять ssh-процессов, которые демон держит живыми:
-  1-2. `-L` на gb10-1 (порт 5023): 9101 → node-exporter, 9401 → dcgm-exporter
-  3-4. `-L` на gb10-2 (порт 5024): 9102 → node-exporter, 9402 → dcgm-exporter
-  5.   `-R` на ВМ: 8040 → шлюз Mercury, 9101/9401/9102/9402 → локальные слушатели
+Четыре `-L`-сессии и пять `-R`-сессий (по одному форварду на соединение), которые
+демон держит живыми:
+  -L на gb10-1 (порт 5023): 9101 → node-exporter, 9401 → dcgm-exporter
+  -L на gb10-2 (порт 5024): 9102 → node-exporter, 9402 → dcgm-exporter
+  -R на ВМ: 8040 → шлюз Mercury, 9101/9401 → gb10-1, 9102/9402 → gb10-2
 
 Каждый форвард — своё соединение: их слишком много вешается на одну ssh-сессию при
 keep-alive скрейпах, и у ssh.exe на Windows есть лимит одновременных форвардов.
@@ -59,14 +60,13 @@ CHILDREN = [
     ("gb10-2 dcgm", BASE + [
         "-p", "5024", "-L", "9402:127.0.0.1:9400", f"yskryuk3@{GW_HOST}",
     ]),
-    ("publish to VM", BASE + [
-        "-R", f"0.0.0.0:8040:{GW_HOST}:8040",
-        "-R", "0.0.0.0:9101:127.0.0.1:9101",
-        "-R", "0.0.0.0:9401:127.0.0.1:9401",
-        "-R", "0.0.0.0:9102:127.0.0.1:9102",
-        "-R", "0.0.0.0:9402:127.0.0.1:9402",
-        f"{VM_USER}@{VM_HOST}",
-    ]),
+    # Публикация тоже по одному процессу на порт: на общей сессии с пятью -R
+    # скопившиеся half-closed каналы вешали очередь вокруг 9102.
+    ("pub api", BASE + ["-R", f"0.0.0.0:8040:{GW_HOST}:8040", f"{VM_USER}@{VM_HOST}"]),
+    ("pub node-a", BASE + ["-R", "0.0.0.0:9101:127.0.0.1:9101", f"{VM_USER}@{VM_HOST}"]),
+    ("pub dcgm-a", BASE + ["-R", "0.0.0.0:9401:127.0.0.1:9401", f"{VM_USER}@{VM_HOST}"]),
+    ("pub node-b", BASE + ["-R", "0.0.0.0:9102:127.0.0.1:9102", f"{VM_USER}@{VM_HOST}"]),
+    ("pub dcgm-b", BASE + ["-R", "0.0.0.0:9402:127.0.0.1:9402", f"{VM_USER}@{VM_HOST}"]),
 ]
 
 
@@ -105,8 +105,18 @@ def cmd_daemon():
     born = {}
     write_status(pid=os.getpid(), started_at=time.strftime("%Y-%m-%d %H:%M:%S"))
     log("демон запущен")
+    stopf = ROOT / f"{TASK_NAME}.stop"
+    stopf.unlink(missing_ok=True)  #fresh start: старый stop-файл не должен гасить новый демон
     while True:
+        if stopf.exists():
+            stopf.unlink()
+            for p in procs.values():
+                p.terminate()
+            log("остановлен командой stop")
+            write_status(stopped_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+            return
         now = time.time()
+        changed = False
         for name, args in CHILDREN:
             proc = procs.get(name)
             alive = proc is not None and proc.poll() is None
@@ -125,20 +135,13 @@ def cmd_daemon():
             )
             born[name] = time.time()
             log(f"{name}: ssh поднят (pid {procs[name].pid})")
-        write_status(
-            children={n: p.pid for n, p in procs.items()},
-            checked_at=time.strftime("%Y-%m-%d %H:%M:%S"),
-        )
-        stopf = ROOT / f"{TASK_NAME}.stop"
-        for _ in range(max(1, CHILD_TTL_S // CHECK_STEP)):
-            if stopf.exists():
-                stopf.unlink()
-                for p in procs.values():
-                    p.terminate()
-                log("остановлен командой stop")
-                write_status(stopped_at=time.strftime("%Y-%m-%d %H:%M:%S"))
-                return
-            time.sleep(CHECK_STEP)
+            changed = True
+        if changed:
+            write_status(
+                children={n: p.pid for n, p in procs.items()},
+                checked_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+            )
+        time.sleep(CHECK_STEP)
 
 
 def cmd_install():
@@ -180,6 +183,12 @@ def cmd_uninstall():
 
 
 def cmd_start():
+    # старый демон мог оставить stop-файл — убираем до подъёма, иначе новый сразу встанет
+    for p in ((ROOT / f"{TASK_NAME}.stop",)):
+        try:
+            p.unlink()
+        except FileNotFoundError:
+            pass
     subprocess.Popen(
         ["pythonw", str(SCRIPT), "daemon"] if Path(sys.executable).with_name("pythonw.exe").is_file()
         else [sys.executable, str(SCRIPT), "daemon"],
