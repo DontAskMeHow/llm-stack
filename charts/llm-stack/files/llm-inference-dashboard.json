@@ -1,0 +1,124 @@
+{
+  "uid": "llm-inference",
+  "title": "LLM inference (vLLM + node)",
+  "tags": ["inference", "vllm"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-6h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Запросы в работе / в очереди",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "sum(vllm:num_requests_running)", "legendFormat": "running"},
+        {"refId": "B", "expr": "sum(vllm:num_requests_waiting)", "legendFormat": "waiting"}
+      ]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "TTFT, p50 / p99",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket[5m])))", "legendFormat": "p50"},
+        {"refId": "B", "expr": "histogram_quantile(0.99, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket[5m])))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "TPOT (время на токен), p50 / p99",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(vllm:request_time_per_output_token_seconds_bucket[5m])))", "legendFormat": "p50"},
+        {"refId": "B", "expr": "histogram_quantile(0.99, sum by (le) (rate(vllm:request_time_per_output_token_seconds_bucket[5m])))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Очередь ожидания, p50 / p99",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "s", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "histogram_quantile(0.5, sum by (le) (rate(vllm:request_queue_time_seconds_bucket[5m])))", "legendFormat": "p50"},
+        {"refId": "B", "expr": "histogram_quantile(0.99, sum by (le) (rate(vllm:request_queue_time_seconds_bucket[5m])))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Prefix cache: доля попаданий",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(vllm:prefix_cache_hits_total[10m])) / sum(rate(vllm:prefix_cache_queries_total[10m]))", "legendFormat": "hit ratio"}
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Спекулятивный декод: принятых токенов на драфт",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8},
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(vllm:spec_decode_num_accepted_tokens_total[10m])) / sum(rate(vllm:spec_decode_num_drafts_total[10m]))", "legendFormat": "accepted per draft"}
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "GPU util, %",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16},
+      "fieldConfig": {"defaults": {"unit": "percent", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "DCGM_FI_DEV_GPU_UTIL", "legendFormat": "{{member}}"}
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "GPU температура, °C",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 16},
+      "fieldConfig": {"defaults": {"unit": "degree", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "{{member}}"}
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "GPU мощность, Вт",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 16},
+      "fieldConfig": {"defaults": {"unit": "watt", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "{{member}}"}
+      ]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Ноды: CPU, доля занятого времени",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 24},
+      "fieldConfig": {"defaults": {"unit": "percentunit", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "legendFormat": "{{instance}}"}
+      ]
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Ноды: память доступна",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 24},
+      "fieldConfig": {"defaults": {"unit": "bytes", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "node_memory_MemAvailable_bytes", "legendFormat": "{{instance}}"}
+      ]
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Шлюз: запросы в секунду и отказы",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 24},
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 8}}, "overrides": []},
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}},
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(gateway_model_requests_total[5m]))", "legendFormat": "all"},
+        {"refId": "B", "expr": "sum by (status) (rate(gateway_model_requests_total{status!=\"ok\"}[5m]))", "legendFormat": "{{status}}"}
+      ]
+    }
+  ]
+}

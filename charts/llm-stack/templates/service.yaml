@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+    # Отдельный лейбл только у этого сервиса: по нему выбирается ServiceMonitor.
+    scrape-target: {{ .Values.metrics.scrapeTarget }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "llm-stack.name" . }}
+    scrape-target: {{ .Values.metrics.scrapeTarget }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort }}
+      nodePort: {{ .Values.service.nodePort }}
+      {{- end }}
+{{- if .Values.ingresses.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: llm-gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "llm-stack.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingresses.className }}
+  rules:
+    - host: {{ .Values.ingresses.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: llm-gateway
+                port:
+                  name: http
+{{- end }}

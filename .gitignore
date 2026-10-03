@@ -1,0 +1,4 @@
+# локальные оверлеи с реальными адресами и токенами
+values.local.yaml
+*.local.yaml
+charts/*/values.local.yaml

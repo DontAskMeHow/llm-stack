@@ -1,0 +1,21 @@
+namespace: llm
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
+  - inference-scrape.yaml
+  - monitoring.yaml
+
+# Дашборд для Grafana: та же JSON-форма, что в helm-чарте, sidecar находит её по лейблу.
+configMapGenerator:
+  - name: grafana-dashboard-llm
+    namespace: kube-system
+    labels:
+      grafana_dashboard: "1"
+    files:
+      - ../charts/llm-stack/files/llm-inference-dashboard.json
+
+generatorOptions:
+  disableNameSuffixHash: true

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: llm-stack
+description: "Домашний контур инференса: лёгкий AI-шлюз + наблюдаемость на одном узле k3s"
+type: application
+version: 0.1.0
+appVersion: "1.0"
+keywords:
+  - llm
+  - vllm
+  - observability
+  - k3s
+maintainers:
+  - name: Kryukov Alexander
