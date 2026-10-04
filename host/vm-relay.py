@@ -115,7 +115,6 @@ def cmd_daemon():
             log("остановлен командой stop")
             write_status(stopped_at=time.strftime("%Y-%m-%d %H:%M:%S"))
             return
-        changed = False
         for name, args in CHILDREN:
             proc = procs.get(name)
             if proc is not None and proc.poll() is None:
@@ -129,12 +128,10 @@ def cmd_daemon():
                 creationflags=NO_WINDOW,
             )
             log(f"{name}: ssh поднят (pid {procs[name].pid})")
-            changed = True
-        if changed:
-            write_status(
-                children={n: p.pid for n, p in procs.items()},
-                checked_at=time.strftime("%Y-%m-%d %H:%M:%S"),
-            )
+        write_status(
+            children={n: p.pid for n, p in procs.items()},
+            checked_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        )
         time.sleep(CHECK_STEP)
 
 
