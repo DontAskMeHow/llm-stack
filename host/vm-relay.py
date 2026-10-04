@@ -27,9 +27,10 @@ SCRIPT = Path(__file__).resolve()
 TASK_NAME = "vm-relay"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 CHECK_STEP = 10
-# Каждое ssh-соединение держит не больше 40 одновременных форвардов, а Prometheus
-# ходит по keep-alive. Дети переизбираются по этому таймеру, чтобы лимит не исчерпался.
-CHILD_TTL_S = 600
+# На каждого ребёнка один форвард, поэтому живое соединение не переизбирают:
+# лишние пересоздания оставляют на ноде half-closed хвосты, которые заползают в
+# лимит одновременных запросов node_exporter (gb10-2 отвечает 503 через ~15 ч).
+# Мёртвый процесс поднимается на следующем шаге опроса.
 
 VM_HOST = "82.25.174.72"
 VM_USER = "root"
@@ -102,7 +103,6 @@ def pid_alive(pid):
 
 def cmd_daemon():
     procs = {}
-    born = {}
     write_status(pid=os.getpid(), started_at=time.strftime("%Y-%m-%d %H:%M:%S"))
     log("демон запущен")
     stopf = ROOT / f"{TASK_NAME}.stop"
@@ -115,25 +115,19 @@ def cmd_daemon():
             log("остановлен командой stop")
             write_status(stopped_at=time.strftime("%Y-%m-%d %H:%M:%S"))
             return
-        now = time.time()
         changed = False
         for name, args in CHILDREN:
             proc = procs.get(name)
-            alive = proc is not None and proc.poll() is None
-            if alive and now - born[name] < CHILD_TTL_S:
+            if proc is not None and proc.poll() is None:
                 continue
             if proc is not None:
-                why = "жив, но пора обновить" if alive else \
-                    f"завершился (rc={proc.returncode})"
-                log(f"{name}: {why}, перезапуск")
-                proc.terminate()
+                log(f"{name}: завершился (rc={proc.returncode}), перезапуск")
             procs[name] = subprocess.Popen(
                 ["ssh", *args],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=NO_WINDOW,
             )
-            born[name] = time.time()
             log(f"{name}: ssh поднят (pid {procs[name].pid})")
             changed = True
         if changed:
